@@ -1,0 +1,250 @@
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Poppins:wght@300;400;600&display=swap');
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+:root {
+    --ocean-deep: #0a1628;
+    --ocean-mid: #1a3a5c;
+    --ocean-light: #4da8da;
+    --gold: #ffd700;
+    --danger: #ff4757;
+    --success: #2ed573;
+    --text-light: #e8f4f8;
+    --glow-cyan: #00fff7;
+}
+
+body {
+    font-family: 'Poppins', sans-serif;
+    background: var(--ocean-deep);
+    overflow: hidden;
+    color: var(--text-light);
+}
+
+canvas { display: block; position: fixed; top: 0; left: 0; z-index: 1; }
+
+/* ===== LOADING SCREEN ===== */
+#loading-screen {
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    background: linear-gradient(180deg, #0a1628 0%, #1a3a5c 100%);
+    display: flex; justify-content: center; align-items: center; z-index: 1000;
+}
+
+.loader { text-align: center; }
+
+.loader h1 {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 3rem; color: var(--glow-cyan);
+    text-shadow: 0 0 20px var(--glow-cyan);
+    margin-bottom: 10px; animation: pulse 2s infinite;
+}
+
+.loader p {
+    font-size: 1.2rem; color: var(--ocean-light);
+}
+
+.ocean-waves { margin-bottom: 20px; }
+
+.ocean-waves span {
+    display: inline-block; width: 15px; height: 80px;
+    background: linear-gradient(180deg, var(--glow-cyan), var(--ocean-light));
+    border-radius: 10px; margin: 0 5px;
+    animation: wave 1.2s ease-in-out infinite;
+}
+
+.ocean-waves span:nth-child(2) { animation-delay: 0.2s; }
+.ocean-waves span:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes wave {
+    0%, 100% { transform: scaleY(0.5); }
+    50% { transform: scaleY(1); }
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
+}
+
+/* ===== START SCREEN ===== */
+#start-screen {
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    background: linear-gradient(180deg, #0a1628 0%, #1a3a5c 50%, #0a1628 100%);
+    display: flex; justify-content: center; align-items: center; z-index: 200;
+    overflow-y: auto;
+}
+
+.start-content { max-width: 700px; padding: 40px; text-align: center; }
+
+.game-title {
+    font-family: 'Orbitron', sans-serif; font-size: 3.5rem; font-weight: 900;
+    color: var(--glow-cyan); text-shadow: 0 0 40px var(--glow-cyan);
+    margin-bottom: 10px; animation: titleGlow 3s ease-in-out infinite;
+}
+
+@keyframes titleGlow {
+    0%, 100% { text-shadow: 0 0 40px var(--glow-cyan), 0 0 80px var(--glow-cyan); }
+    50% { text-shadow: 0 0 60px var(--glow-cyan), 0 0 120px var(--glow-cyan); }
+}
+
+.tagline { font-size: 1.3rem; color: var(--ocean-light); margin-bottom: 30px; }
+
+.story-box, .objectives-box {
+    background: rgba(26, 58, 92, 0.6); border: 2px solid var(--ocean-mid);
+    border-radius: 15px; padding: 25px; margin-bottom: 25px; text-align: left;
+}
+
+.story-box h3, .objectives-box h3 {
+    font-family: 'Orbitron', sans-serif; color: var(--glow-cyan);
+    margin-bottom: 15px; font-size: 1.2rem;
+}
+
+.story-box p { line-height: 1.8; font-size: 1rem; }
+
+.objectives-box ul { list-style: none; }
+
+.objectives-box li { 
+    padding: 10px 0; font-size: 1.1rem; 
+    border-bottom: 1px solid rgba(77,168,218,0.2); 
+}
+.objectives-box li:last-child { border-bottom: none; }
+.objectives-box li strong { color: var(--gold); }
+
+.difficulty-select { margin-bottom: 30px; }
+.difficulty-select h3 { 
+    font-family: 'Orbitron', sans-serif; 
+    color: var(--ocean-light); margin-bottom: 15px; 
+}
+
+.diff-btn {
+    padding: 12px 30px; margin: 0 8px; 
+    font-family: 'Orbitron', sans-serif; font-size: 1rem; 
+    background: var(--ocean-mid); color: var(--text-light);
+    border: 2px solid var(--ocean-light); border-radius: 8px; cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.diff-btn:hover { background: var(--ocean-light); color: var(--ocean-deep); }
+
+.diff-btn.active {
+    background: var(--glow-cyan); color: var(--ocean-deep);
+    border-color: var(--glow-cyan); box-shadow: 0 0 20px var(--glow-cyan);
+}
+
+.start-button {
+    padding: 20px 60px; font-family: 'Orbitron', sans-serif; 
+    font-size: 1.4rem; font-weight: 700;
+    background: linear-gradient(135deg, var(--ocean-mid), var(--ocean-light));
+    color: white; border: none; border-radius: 15px; cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.start-button:hover {
+    transform: scale(1.05); box-shadow: 0 0 40px var(--glow-cyan);
+}
+
+/* ===== GAME UI ===== */
+#game-ui {
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    pointer-events: none; z-index: 100; display: none;
+}
+
+.ui-top {
+    position: absolute; top: 20px; left: 50%; transform: translateX(-50%);
+    display: flex; gap: 30px; padding: 15px 30px;
+    background: rgba(10, 22, 40, 0.85); border-radius: 15px;
+    border: 2px solid var(--ocean-light); 
+    box-shadow: 0 0 30px rgba(77,168,218,0.3);
+}
+
+.score-container, .timer-container, .oxygen-container, .target-container {
+    display: flex; flex-direction: column; align-items: center; min-width: 100px;
+}
+
+.label {
+    font-family: 'Orbitron', sans-serif; font-size: 0.7rem;
+    color: var(--ocean-light); letter-spacing: 2px;
+}
+
+#score, #timer, #target {
+    font-family: 'Orbitron', sans-serif; font-size: 1.8rem; font-weight: 700;
+    color: var(--glow-cyan); text-shadow: 0 0 10px var(--glow-cyan);
+}
+
+.oxygen-bar {
+    width: 120px; height: 12px; background: rgba(255,255,255,0.2);
+    border-radius: 6px; overflow: hidden; margin-top: 5px;
+}
+
+#oxygen-fill {
+    width: 100%; height: 100%;
+    background: linear-gradient(90deg, var(--success), var(--glow-cyan));
+    border-radius: 6px; transition: width 0.3s ease;
+    box-shadow: 0 0 10px var(--glow-cyan);
+}
+
+.ui-bottom {
+    position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
+}
+
+.controls-hint {
+    display: flex; align-items: center; gap: 8px; padding: 12px 25px;
+    background: rgba(10, 22, 40, 0.85); border-radius: 10px;
+}
+
+.key {
+    width: 35px; height: 35px; display: flex; justify-content: center; align-items: center;
+    background: var(--ocean-mid); border-radius: 6px; font-family: 'Orbitron', sans-serif;
+    font-weight: 700; border: 1px solid var(--ocean-light);
+}
+
+.controls-hint span { color: var(--ocean-light); margin: 0 10px; }
+
+/* ===== GAME OVER ===== */
+#gameover-screen, #victory-screen {
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(10, 22, 40, 0.95); display: none;
+    justify-content: center; align-items: center; z-index: 300;
+}
+
+.gameover-content, .victory-content { text-align: center; padding: 40px; }
+
+.gameover-content h1 {
+    font-family: 'Orbitron', sans-serif; font-size: 4rem;
+    color: var(--danger); text-shadow: 0 0 30px var(--danger);
+    margin-bottom: 30px;
+}
+
+.victory-content h1 {
+    font-family: 'Orbitron', sans-serif; font-size: 3rem;
+    color: var(--success); text-shadow: 0 0 30px var(--success);
+    margin-bottom: 30px;
+}
+
+.stats-box {
+    background: rgba(26, 58, 92, 0.8); border-radius: 15px;
+    padding: 30px; margin-bottom: 30px;
+}
+
+.stat { margin: 20px 0; }
+
+.stat-label {
+    font-family: 'Orbitron', sans-serif; font-size: 1rem;
+    color: var(--ocean-light); display: block; margin-bottom: 5px;
+}
+
+.stat-value {
+    font-family: 'Orbitron', sans-serif; font-size: 3rem;
+    font-weight: 700; color: var(--gold); text-shadow: 0 0 20px var(--gold);
+}
+
+.restart-button {
+    padding: 18px 50px; font-family: 'Orbitron', sans-serif; font-size: 1.2rem;
+    background: var(--ocean-light); color: var(--ocean-deep); border: none;
+    border-radius: 12px; cursor: pointer; margin: 10px;
+    transition: all 0.3s ease;
+}
+
+.restart-button:hover { 
+    transform: scale(1.05); box-shadow: 0 0 30px var(--glow-cyan); 
+}
+
+.hidden { display: none !important; }
