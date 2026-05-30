@@ -6,157 +6,175 @@
     <title>Ocean Rescue - 3D Adventure</title>
     <link rel="stylesheet" href="style.css">
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Poppins:wght@300;400;600&display=swap" rel="stylesheet">
-
     <style>
-    /* Ensure canvas is behind UI */
-    canvas {
-        position: fixed;
-        top: 0;
-        left: 0;
-        z-index: 1;
-    }
-    
-    /* Chase indicator style */
-    body.chase-active {
-        box-shadow: inset 0 0 30px rgba(255, 0, 0, 0.5);
-    }
-
-    /* Power-up notification styles */
-    @keyframes pulse {
-        0%, 100% { transform: translate(-50%, -50%) scale(1); }
-        50% { transform: translate(-50%, -50%) scale(1.1); }
-    }
-    
-    /* Shield effect when active */
-    .shield-active {
-        animation: shieldPulse 0.5s infinite;
-    }
-    
-    @keyframes shieldPulse {
-        0%, 100% { box-shadow: 0 0 0 0 rgba(78, 205, 196, 0.7); }
-        50% { box-shadow: 0 0 0 20px rgba(78, 205, 196, 0); }
-    }
-</style>
+    canvas { position: fixed; top: 0; left: 0; z-index: 1; }
+    body.chase-active { box-shadow: inset 0 0 30px rgba(255,0,0,0.5); }
+    @keyframes pulse { 0%,100%{transform:translate(-50%,-50%) scale(1)} 50%{transform:translate(-50%,-50%) scale(1.1)} }
+    @keyframes shieldPulse { 0%,100%{box-shadow:0 0 0 0 rgba(78,205,196,0.7)} 50%{box-shadow:0 0 0 20px rgba(78,205,196,0)} }
+    </style>
 </head>
 <body>
-    <!-- Loading Screen -->
-    <div id="loading-screen">
-        <div class="loader">
-            <div class="ocean-waves">
-                <span></span><span></span><span></span>
-            </div>
-            <h1>OCEAN RESCUE</h1>
-            <p>Diving into the depths...</p>
+
+<!-- Loading Screen -->
+<div id="loading-screen">
+    <div class="loader">
+        <div class="ocean-waves"><span></span><span></span><span></span></div>
+        <h1>OCEAN RESCUE</h1>
+        <p>Diving into the depths...</p>
+    </div>
+</div>
+
+<!-- Start Screen -->
+<div id="start-screen" style="display:none;">
+    <div class="start-content">
+        <h1 class="game-title">🌊 OCEAN RESCUE 🌊</h1>
+        <p class="tagline">Dive deep. Save marine life. Become a hero.</p>
+
+        <div id="high-score-display" style="font-family:Orbitron,sans-serif;font-size:1.1rem;color:#ffd700;text-shadow:0 0 12px #ffd700;margin-bottom:18px;">🏆 BEST: 0</div>
+
+        <div class="story-box">
+            <h3>📖 STORY</h3>
+            <p>Marine life is in danger! Lead the diver through beautiful coral reefs, avoiding sharks and jellyfish, collecting starfish to rescue marine animals.</p>
+        </div>
+
+        <div class="objectives-box">
+            <h3>🎯 MISSION OBJECTIVES</h3>
+            <ul>
+                <li>⭐ Collect <strong>Starfish</strong> to complete the mission</li>
+                <li>💨 Swim through <strong>Oxygen Stations</strong> to refill air</li>
+                <li>🐢 Hold <strong>SHIFT</strong> near a turtle to ride it</li>
+                <li>💎 Collect <strong>Pearls</strong> and open <strong>Treasure Chests</strong></li>
+                <li>⚡ Grab <strong>Power-Ups</strong> to gain special abilities</li>
+            </ul>
+        </div>
+
+        <div class="difficulty-select">
+            <h3>⚡ SELECT DIFFICULTY</h3>
+            <button class="diff-btn active" data-difficulty="easy">EASY<br><small>12 Stars · 200s</small></button>
+            <button class="diff-btn" data-difficulty="normal">NORMAL<br><small>15 Stars · 170s</small></button>
+            <button class="diff-btn" data-difficulty="hard">HARD<br><small>18 Stars · 140s</small></button>
+        </div>
+
+        <button id="start-btn" class="start-button">🛥️ START DIVE</button>
+
+        <div id="leaderboard-start" style="margin-top:25px;background:rgba(26,58,92,0.6);border-radius:12px;padding:16px;border:1px solid #1a3a5c;display:none;">
+            <h3 style="font-family:Orbitron;font-size:0.9rem;color:#00fff7;margin-bottom:10px;">📋 RECENT SCORES</h3>
+            <div id="leaderboard-list-start" style="font-family:Orbitron,monospace;font-size:12px;color:#aaddff;"></div>
+        </div>
+    </div>
+</div>
+
+<!-- Game UI -->
+<div id="game-ui">
+    <div class="ui-top">
+        <div class="score-container">
+            <span class="label">SCORE</span>
+            <span id="score">0</span>
+        </div>
+        <div class="timer-container">
+            <span class="label">TIME</span>
+            <span id="timer">03:00</span>
+        </div>
+        <div class="oxygen-container">
+            <span class="label">OXYGEN</span>
+            <div class="oxygen-bar"><div id="oxygen-fill"></div></div>
+        </div>
+        <div class="target-container">
+            <span class="label">TARGET</span>
+            <span id="target">0/10</span>
         </div>
     </div>
 
-    <!-- Start Screen -->
-    <div id="start-screen" style="display: none;">
-        <div class="start-content">
-            <h1 class="game-title">🌊 OCEAN RESCUE 🌊</h1>
-            <p class="tagline">Dive deep. Save marine life. Become a hero.</p>
-            
-            <div class="story-box">
-                <h3>📖 STORY</h3>
-                <p>Marine life is in danger! Lead the diver through beautiful coral reefs, avoiding sharks and jellyfish, collecting starfish to rescue marine animals.</p>
-            </div>
+    <!-- Combo display -->
+    <div id="combo-display" style="position:fixed;top:100px;left:50%;transform:translateX(-50%);font-family:Orbitron,monospace;font-size:1.4rem;font-weight:bold;color:#ffaa00;text-shadow:0 0 15px #ffaa00;z-index:200;pointer-events:none;opacity:0;transition:opacity 0.3s;"></div>
 
-            <div class="objectives-box">
-                <h3>🎯 MISSION OBJECTIVES</h3>
-                <ul>
-                    <li>⭐ Collect <strong>10 Starfish</strong> to rescue marine animals</li>
-                    <li>⏱️ Complete within <strong>3 minutes</strong></li>
-                    <li>🫧 Avoid <strong>Sharks</strong> and <strong>Jellyfish</strong></li>
-                    <li>💎 Collect <strong>Pearls</strong> for bonus points</li>
-                </ul>
-            </div>
+    <!-- Difficulty badge -->
+    <div id="difficulty-badge" style="position:fixed;top:20px;left:20px;font-family:Orbitron,monospace;font-size:0.75rem;background:rgba(0,0,0,0.8);border:1px solid #4da8da;border-radius:8px;padding:6px 14px;color:#4da8da;z-index:200;display:none;"></div>
 
-            <div class="difficulty-select">
-                <h3>⚡ SELECT DIFFICULTY</h3>
-                <button class="diff-btn active" data-difficulty="easy">EASY</button>
-                <button class="diff-btn" data-difficulty="normal">NORMAL</button>
-                <button class="diff-btn" data-difficulty="hard">HARD</button>
-            </div>
-
-            <button id="start-btn" class="start-button">🛥️ START DIVE</button>
+    <div class="ui-bottom">
+        <div class="controls-hint">
+            <div class="key">W</div><div class="key">A</div><div class="key">S</div><div class="key">D</div>
+            <span>Move</span>
+            <div class="key">SPACE</div><span>Up</span>
+            <div class="key">SHIFT</div><span>Down / Ride Turtle</span>
+            <div class="key">🖱️</div><span>Look</span>
         </div>
     </div>
+</div>
 
-    <!-- Game UI -->
-    <div id="game-ui">
-        <div class="ui-top">
-            <div class="score-container">
-                <span class="label">SCORE</span>
-                <span id="score">0</span>
+<!-- Game Over Screen -->
+<div id="gameover-screen" class="hidden">
+    <div class="gameover-content">
+        <h1 id="gameover-title">GAME OVER</h1>
+        <div class="stats-box">
+            <div class="stat">
+                <span class="stat-label">FINAL SCORE</span>
+                <span id="final-score" class="stat-value">0</span>
             </div>
-            <div class="timer-container">
-                <span class="label">TIME</span>
-                <span id="timer">03:00</span>
-            </div>
-            <div class="oxygen-container">
-                <span class="label">OXYGEN</span>
-                <div class="oxygen-bar"><div id="oxygen-fill"></div></div>
-            </div>
-            <div class="target-container">
-                <span class="label">TARGET</span>
-                <span id="target">0/10</span>
-            </div>
+            <div id="gameover-breakdown"></div>
+            <div id="gameover-hs" style="font-family:Orbitron,monospace;font-size:1rem;color:#ffd700;margin-top:10px;"></div>
         </div>
-        
-        <div class="ui-bottom">
-            <div class="controls-hint">
-                <div class="key">W</div><div class="key">A</div><div class="key">S</div><div class="key">D</div>
-                <span>Move</span>
-                <div class="key">SPACE</div><span>Ascend</span>
-                <div class="key">SHIFT</div><span>Descend</span>
-            </div>
+        <div id="leaderboard-box" style="margin-top:15px;background:rgba(10,22,40,0.9);border-radius:10px;padding:14px;border:1px solid #1a3a5c;min-width:320px;">
+            <div style="font-family:Orbitron,monospace;font-size:0.85rem;color:#00fff7;margin-bottom:8px;">📋 RECENT SCORES</div>
+            <div id="leaderboard-list"></div>
         </div>
+        <button id="restart-btn" class="restart-button">🔄 DIVE AGAIN</button>
     </div>
+</div>
 
-    <!-- Game Over Screen -->
-    <div id="gameover-screen" class="hidden">
-        <div class="gameover-content">
-            <h1 id="gameover-title">GAME OVER</h1>
-            <div class="stats-box">
-                <div class="stat">
-                    <span class="stat-label">FINAL SCORE</span>
-                    <span id="final-score" class="stat-value">0</span>
-                </div>
+<!-- Victory Screen -->
+<div id="victory-screen" class="hidden">
+    <div class="victory-content">
+        <h1>🎉 MISSION COMPLETE! 🎉</h1>
+        <div class="stats-box">
+            <div class="stat">
+                <span class="stat-label">FINAL SCORE</span>
+                <span id="victory-score" class="stat-value">0</span>
             </div>
-            <button id="restart-btn" class="restart-button">🔄 DIVE AGAIN</button>
+            <div id="victory-breakdown"></div>
+            <div id="victory-hs" style="font-family:Orbitron,monospace;font-size:1.1rem;color:#ffd700;margin-top:12px;"></div>
         </div>
-    </div>
-
-    <!-- Victory Screen -->
-    <div id="victory-screen" class="hidden">
-        <div class="victory-content">
-            <h1>🎉 MISSION COMPLETE! 🎉</h1>
-            <div class="stats-box">
-                <div class="stat">
-                    <span class="stat-label">FINAL SCORE</span>
-                    <span id="victory-score" class="stat-value">0</span>
-                </div>
-            </div>
-            <button id="victory-restart-btn" class="restart-button">🔄 PLAY AGAIN</button>
+        <div id="leaderboard-box-v" style="margin-top:15px;background:rgba(10,22,40,0.9);border-radius:10px;padding:14px;border:1px solid #1a3a5c;min-width:320px;">
+            <div style="font-family:Orbitron,monospace;font-size:0.85rem;color:#00fff7;margin-bottom:8px;">📋 RECENT SCORES</div>
+            <div id="leaderboard-list-v"></div>
         </div>
+        <button id="victory-restart-btn" class="restart-button">🔄 PLAY AGAIN</button>
     </div>
+</div>
 
-    <!-- Three.js -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    <script src="game.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="game.js"></script>
 
-    <script>
-// Emergency fallback - ensure loading screen hides
+<script>
+// Emergency loading screen fallback
 window.addEventListener('load', function() {
     setTimeout(function() {
-        const loadingScreen = document.getElementById('loading-screen');
-        if (loadingScreen && loadingScreen.style.display !== 'none') {
-            console.log("Emergency: Hiding loading screen");
-            loadingScreen.style.display = 'none';
-            const startScreen = document.getElementById('start-screen');
-            if (startScreen) startScreen.style.display = 'flex';
+        const ls = document.getElementById('loading-screen');
+        if (ls && ls.style.display !== 'none') {
+            ls.style.display = 'none';
+            const ss = document.getElementById('start-screen');
+            if (ss) ss.style.display = 'flex';
         }
     }, 3000);
+});
+
+// Populate start screen leaderboard on load
+window.addEventListener('DOMContentLoaded', function() {
+    const scores = JSON.parse(localStorage.getItem('oceanRescueScores') || '[]');
+    if (scores.length) {
+        const lb = document.getElementById('leaderboard-start');
+        const lbl = document.getElementById('leaderboard-list-start');
+        if (lb && lbl) {
+            lb.style.display = 'block';
+            lbl.innerHTML = scores.map((s,i)=>
+                `<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid #ffffff11">
+                    <span>${i+1}. ${s.victory?'✅':'❌'} ${s.difficulty.toUpperCase()}</span>
+                    <span style="color:#ffd700">${s.score}</span>
+                    <span style="color:#888">${s.date}</span>
+                </div>`
+            ).join('');
+        }
+    }
 });
 </script>
 </body>

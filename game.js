@@ -13,6 +13,14 @@ let diver, ocean;
 let starfish = [], pearls = [], sharks = [], jellyfish = [], bubbles = [], coral = [];
 let tropicalFish = [], seaTurtles = [], dolphins = [], octopus = [], treasureChests = [];
 let oxygenStations = [];
+let oxygenTankPickups = [];
+let bossShark = null;
+let bossSpawned = false;
+let isPaused = false;
+let pauseMenu = null;
+let floatingTexts = [];
+let screenShakeAmount = 0;
+let cameraShakeX = 0, cameraShakeY = 0;
 let magnetCollectCount = 0;
 let magnetActiveFlag = false;
 let ridingTurtle = null;
@@ -55,11 +63,11 @@ let sounds = {
 let soundEnabled = true;
 let masterGain = null;
 
-// Chase timer - FIXED: 10 seconds chase, 5 seconds rest
+// Chase timer
 let chaseTimer = 0;
 let isChaseActive = false;
-const CHASE_DURATION = 10;   // Chase for 10 seconds
-const REST_DURATION = 5;     // Rest for 5 seconds (total cycle = 15 seconds)
+const CHASE_DURATION = 10;
+const REST_DURATION = 10;
 
 // High score
 let highScore = parseInt(localStorage.getItem('oceanRescueHighScore') || '0');
@@ -110,6 +118,7 @@ function makeSandTexture() {
             ctx.fillRect(i, j, 1, 1);
         }
     }
+    // Pebble dots
     for (let k = 0; k < 120; k++) {
         const x = Math.random() * 256, y = Math.random() * 256;
         const r = Math.random() * 4 + 1;
@@ -135,7 +144,7 @@ function makeCoralTexture(hexColor) {
     for (let i = 0; i < 64; i++) {
         for (let j = 0; j < 64; j++) {
             const n = Math.random() * 40 - 20;
-            ctx.fillStyle = `rgb(${Math.min(255, r + n)},${Math.min(255, g + n)},${Math.min(255, b + n)})`;
+            ctx.fillStyle = `rgb(${Math.min(255,r+n)},${Math.min(255,g+n)},${Math.min(255,b+n)})`;
             ctx.fillRect(i, j, 1, 1);
         }
     }
@@ -216,6 +225,15 @@ function initAudio() {
         sounds.sharkWarning = () => {
             playTone(200, 0.08, 'sawtooth', 0.2);
             setTimeout(() => playTone(180, 0.08, 'sawtooth', 0.2), 200);
+        };
+        sounds.tankPickup = () => {
+            playTone(500, 0.1, 'sine', 0.4);
+            setTimeout(() => playTone(700, 0.15, 'sine', 0.4), 100);
+            setTimeout(() => playTone(900, 0.2, 'sine', 0.4), 220);
+        };
+        sounds.bossRoar = () => {
+            playTone(80, 0.5, 'sawtooth', 0.7);
+            setTimeout(() => playTone(60, 0.8, 'sawtooth', 0.6), 300);
         };
         sounds.victory = () => {
             [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => {
@@ -337,6 +355,7 @@ function updateDepthFog() {
 }
 
 function addPostProcessing() {
+    // Blue tint overlay
     const overlay = document.createElement('div');
     overlay.id = 'underwater-overlay';
     Object.assign(overlay.style, {
@@ -345,6 +364,7 @@ function addPostProcessing() {
     });
     document.body.appendChild(overlay);
 
+    // Distortion ripple overlay
     distortionOverlay = document.createElement('canvas');
     distortionOverlay.id = 'distortion-overlay';
     Object.assign(distortionOverlay.style, {
@@ -403,6 +423,57 @@ function spawnSparkles(position) {
     }
 }
 
+// ===== FLOATING TEXT NUMBERS =====
+function spawnFloatingText(text, position, color) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    Object.assign(div.style, {
+        position: 'fixed', fontFamily: 'Orbitron, monospace',
+        fontSize: '22px', fontWeight: 'bold', color,
+        pointerEvents: 'none', zIndex: '500',
+        textShadow: `0 0 10px ${color}`,
+        transition: 'none', userSelect: 'none'
+    });
+    document.body.appendChild(div);
+    // Project 3D position to screen
+    const vec = position.clone().project(camera);
+    const x = (vec.x * 0.5 + 0.5) * window.innerWidth;
+    const y = (-vec.y * 0.5 + 0.5) * window.innerHeight;
+    div.style.left = x + 'px';
+    div.style.top = y + 'px';
+    floatingTexts.push({ div, x, y, vy: -2.5, life: 1.0, decay: 0.022 });
+}
+
+function updateFloatingTexts() {
+    for (let i = floatingTexts.length - 1; i >= 0; i--) {
+        const ft = floatingTexts[i];
+        ft.life -= ft.decay;
+        if (ft.life <= 0) { ft.div.remove(); floatingTexts.splice(i, 1); continue; }
+        ft.y += ft.vy;
+        ft.div.style.top = ft.y + 'px';
+        ft.div.style.opacity = ft.life;
+        ft.div.style.transform = `scale(${0.8 + ft.life * 0.4})`;
+    }
+}
+
+// ===== SCREEN SHAKE =====
+function triggerScreenShake(amount) {
+    screenShakeAmount = Math.max(screenShakeAmount, amount);
+}
+
+function updateScreenShake() {
+    if (screenShakeAmount > 0.01) {
+        cameraShakeX = (Math.random() - 0.5) * screenShakeAmount;
+        cameraShakeY = (Math.random() - 0.5) * screenShakeAmount;
+        screenShakeAmount *= 0.85;
+        camera.position.x += cameraShakeX;
+        camera.position.y += cameraShakeY;
+    } else {
+        screenShakeAmount = 0;
+        cameraShakeX = 0; cameraShakeY = 0;
+    }
+}
+
 function updateSparkles() {
     for (let i = sparkleParticles.length - 1; i >= 0; i--) {
         const p = sparkleParticles[i];
@@ -420,7 +491,9 @@ function createBubbleTrail() {
     const now = Date.now();
     if (now - lastBubbleTime > 100 && gameState.isPlaying && diver) {
         lastBubbleTime = now;
-        for (let i = 0; i < Math.floor(Math.random() * 3) + 2; i++) {
+        const isMovingFast = (keys.w||keys.a||keys.s||keys.d||keys.space||keys.shift);
+        const bubbleCount = isMovingFast ? Math.floor(Math.random()*5)+4 : Math.floor(Math.random()*2)+1;
+        for (let i = 0; i < bubbleCount; i++) {
             const geo = new THREE.SphereGeometry(0.08, 8, 8);
             const mat = new THREE.MeshPhongMaterial({ color: 0xaaffff, transparent: true, opacity: 0.6, emissive: 0x44aaaa });
             const bubble = new THREE.Mesh(geo, mat);
@@ -446,23 +519,70 @@ function createBubbleTrail() {
     }
 }
 
+// ===== OXYGEN TANK PICKUPS =====
+function createOxygenTankPickups() {
+    for (let i = 0; i < 8; i++) {
+        const group = new THREE.Group();
+        const tankMat = new THREE.MeshPhongMaterial({ color: 0x00ccff, emissive: 0x0044aa, emissiveIntensity: 0.5, shininess: 80 });
+        const tank = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.25, 0.9, 12), tankMat);
+        group.add(tank);
+        const capMat = new THREE.MeshPhongMaterial({ color: 0xffffff, shininess: 100 });
+        const capT = new THREE.Mesh(new THREE.SphereGeometry(0.26, 10, 10), capMat);
+        capT.position.y = 0.45; group.add(capT);
+        const capB = new THREE.Mesh(new THREE.SphereGeometry(0.26, 10, 10), capMat);
+        capB.position.y = -0.45; group.add(capB);
+        // Glow halo
+        const hc = document.createElement('canvas'); hc.width = hc.height = 64;
+        const ctx = hc.getContext('2d');
+        const g = ctx.createRadialGradient(32,32,0,32,32,32);
+        g.addColorStop(0,'rgba(0,200,255,0.8)'); g.addColorStop(1,'rgba(0,200,255,0)');
+        ctx.fillStyle = g; ctx.fillRect(0,0,64,64);
+        const halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(hc), transparent: true, opacity: 0.7, depthWrite: false }));
+        halo.scale.set(2.5, 2.5, 1); group.add(halo);
+        group.position.set(Math.random()*80-40, Math.random()*20-8, Math.random()*80-40);
+        group.userData = { type: 'oxygenTank', collected: false, bobOffset: Math.random()*Math.PI*2 };
+        scene.add(group); oxygenTankPickups.push(group);
+    }
+}
+
+function updateOxygenTankPickups(time) {
+    oxygenTankPickups.forEach(tank => {
+        if (tank.userData.collected) return;
+        tank.position.y += Math.sin(time * 2 + tank.userData.bobOffset) * 0.012;
+        tank.rotation.y += 0.02;
+        if (diver && tank.position.distanceTo(diver.position) < 2.2) {
+            tank.userData.collected = true; tank.visible = false;
+            const gain = Math.min(100 - gameState.oxygen, 30);
+            gameState.oxygen = Math.min(100, gameState.oxygen + 30);
+            updateUI();
+            spawnSparkles(tank.position.clone());
+            spawnFloatingText('+30% O₂', tank.position.clone(), '#00ccff');
+            if (sounds.tankPickup) sounds.tankPickup();
+            showNotification('🫧 OXYGEN TANK! +30%', '#00ccff', '22px', 1500);
+        }
+    });
+}
+
 // ===== OXYGEN STATIONS =====
 function createOxygenStations() {
     for (let i = 0; i < 6; i++) {
         const group = new THREE.Group();
 
+        // Vent pipe
         const pipeGeo = new THREE.CylinderGeometry(0.2, 0.25, 1.2, 8);
         const pipeMat = new THREE.MeshPhongMaterial({ color: 0x8899aa, shininess: 60 });
         const pipe = new THREE.Mesh(pipeGeo, pipeMat);
         pipe.position.y = 0.6;
         group.add(pipe);
 
+        // Glowing top
         const topGeo = new THREE.SphereGeometry(0.35, 12, 12);
         const topMat = new THREE.MeshPhongMaterial({ color: 0x00ffcc, emissive: 0x00ffcc, emissiveIntensity: 0.7, transparent: true, opacity: 0.85 });
         const top = new THREE.Mesh(topGeo, topMat);
         top.position.y = 1.4;
         group.add(top);
 
+        // Halo ring
         const ringGeo = new THREE.TorusGeometry(0.55, 0.05, 8, 24);
         const ringMat = new THREE.MeshPhongMaterial({ color: 0x00ffcc, emissive: 0x00ffcc, emissiveIntensity: 0.5, transparent: true, opacity: 0.5 });
         const ring = new THREE.Mesh(ringGeo, ringMat);
@@ -485,6 +605,7 @@ function updateOxygenStations(time) {
         if (station.children[1]) station.children[1].scale.setScalar(pulse);
         if (station.children[2]) station.children[2].scale.setScalar(pulse);
 
+        // Emit rising bubbles from vent
         if (Math.random() < 0.08) {
             const bGeo = new THREE.SphereGeometry(0.06 + Math.random() * 0.06, 6, 6);
             const bMat = new THREE.MeshBasicMaterial({ color: 0x99ffee, transparent: true, opacity: 0.7 });
@@ -492,7 +613,7 @@ function updateOxygenStations(time) {
             b.position.copy(station.position).add(new THREE.Vector3((Math.random()-0.5)*0.3, 1.5, (Math.random()-0.5)*0.3));
             b.userData = { life: 1, vel: new THREE.Vector3((Math.random()-0.5)*0.02, 0.07+Math.random()*0.05, (Math.random()-0.5)*0.02), decay: 0.015 };
             scene.add(b);
-            sparkleParticles.push(b);
+            sparkleParticles.push(b); // reuse sparkle system for cleanup
         }
 
         if (diver && station.userData.cooldown <= 0) {
@@ -532,6 +653,7 @@ function updateMinimap() {
     const worldSize = 96;
     ctx.clearRect(0, 0, W, H);
 
+    // Background
     ctx.fillStyle = 'rgba(5,15,35,0.9)';
     ctx.fillRect(0, 0, W, H);
     ctx.strokeStyle = '#00fff722'; ctx.lineWidth = 1;
@@ -544,12 +666,14 @@ function updateMinimap() {
         };
     }
 
+    // Coral dots
     coral.forEach(c => {
         const { mx, my } = worldToMap(c.position.x, c.position.z);
         ctx.beginPath(); ctx.arc(mx, my, 2, 0, Math.PI*2);
         ctx.fillStyle = '#6bcb77'; ctx.fill();
     });
 
+    // Oxygen stations
     oxygenStations.forEach(s => {
         const { mx, my } = worldToMap(s.position.x, s.position.z);
         ctx.beginPath(); ctx.arc(mx, my, 4, 0, Math.PI*2);
@@ -558,6 +682,7 @@ function updateMinimap() {
         ctx.stroke();
     });
 
+    // Uncollected starfish (pulsing)
     starfish.forEach(star => {
         if (star.userData.collected) return;
         const { mx, my } = worldToMap(star.position.x, star.position.z);
@@ -565,6 +690,7 @@ function updateMinimap() {
         ctx.fillStyle = '#ff5555'; ctx.fill();
     });
 
+    // Treasure chests
     treasureChests.forEach(chest => {
         if (chest.userData.collected) return;
         const { mx, my } = worldToMap(chest.position.x, chest.position.z);
@@ -572,6 +698,7 @@ function updateMinimap() {
         ctx.fillStyle = '#ffd700'; ctx.fill();
     });
 
+    // Sharks - red triangles
     sharks.forEach(shark => {
         const { mx, my } = worldToMap(shark.position.x, shark.position.z);
         ctx.beginPath();
@@ -580,11 +707,13 @@ function updateMinimap() {
         ctx.fillStyle = '#ff2222'; ctx.fill();
     });
 
+    // Diver - white circle
     const { mx, my } = worldToMap(diver.position.x, diver.position.z);
     ctx.beginPath(); ctx.arc(mx, my, 5, 0, Math.PI*2);
     ctx.fillStyle = '#ffffff'; ctx.fill();
     ctx.strokeStyle = '#00fff7'; ctx.lineWidth = 2; ctx.stroke();
 
+    // Legend
     ctx.font = '8px Orbitron, monospace';
     ctx.fillStyle = '#ffffff88';
     ctx.fillText('⭐ STARFISH  🔴 SHARK  💨 O₂', 4, H - 6);
@@ -735,6 +864,7 @@ function createMarineLife() {
         const tail = new THREE.Mesh(new THREE.ConeGeometry(0.25, 0.5, 8), mat);
         tail.position.x = -0.7; tail.rotation.z = Math.PI / 2;
         fishGroup.add(tail);
+        // Stripe
         const stripeMat = new THREE.MeshPhongMaterial({ color: 0xffffff, transparent: true, opacity: 0.4 });
         const stripe = new THREE.Mesh(new THREE.CylinderGeometry(0.36, 0.36, 0.12, 12), stripeMat);
         stripe.rotation.z = Math.PI / 2; stripe.position.x = 0.1;
@@ -753,18 +883,14 @@ function createMarineLife() {
         turtleGroup.add(shell);
         const headMat = new THREE.MeshPhongMaterial({ color: 0x40916c });
         const head = new THREE.Mesh(new THREE.SphereGeometry(0.32, 16, 16), headMat);
-        head.position.x = 0.9; 
-        turtleGroup.add(head);
-        const flipperPositions = [[-0.3,0.4],[-0.3,-0.4],[0.3,0.4],[0.3,-0.4]];
-        flipperPositions.forEach(([fx,fz]) => {
+        head.position.x = 0.9; turtleGroup.add(head);
+        [[-0.3,0.4],[-0.3,-0.4],[0.3,0.4],[0.3,-0.4]].forEach(([fx,fz]) => {
             const flipper = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.08, 0.25), headMat);
-            flipper.position.set(fx, -0.2, fz); 
-            turtleGroup.add(flipper);
+            flipper.position.set(fx, -0.2, fz); turtleGroup.add(flipper);
         });
         turtleGroup.position.set(Math.random()*70-35, -5+Math.random()*10, Math.random()*70-35);
         turtleGroup.userData = { type: 'turtle', speed: 1.5, direction: new THREE.Vector3(Math.random()-0.5, 0, Math.random()-0.5).normalize(), rideOffset: new THREE.Vector3(0, 1.2, 0) };
-        scene.add(turtleGroup); 
-        seaTurtles.push(turtleGroup);
+        scene.add(turtleGroup); seaTurtles.push(turtleGroup);
     }
 
     // Dolphins
@@ -836,6 +962,7 @@ function createMarineLife() {
         const glowMat = new THREE.MeshPhongMaterial({ color, transparent: true, opacity: 0.25, emissive: color });
         const glow = new THREE.Mesh(new THREE.SphereGeometry(0.8, 16, 16), glowMat);
         group.add(glow);
+        // Orbiting particles
         for (let p = 0; p < 10; p++) {
             const pm = new THREE.MeshBasicMaterial({ color });
             const pc = new THREE.Mesh(new THREE.SphereGeometry(0.07, 6, 6), pm);
@@ -843,6 +970,7 @@ function createMarineLife() {
             pc.position.set(Math.cos(angle)*0.9, Math.sin(angle*2)*0.4, Math.sin(angle)*0.9);
             group.add(pc);
         }
+        // Canvas label
         const canvas = document.createElement('canvas');
         canvas.width = 128; canvas.height = 48;
         const ctx = canvas.getContext('2d');
@@ -869,13 +997,14 @@ function updateMarineLife(time, delta) {
     });
 
     seaTurtles.forEach(turtle => {
-        if (ridingTurtle === turtle) return;
+        if (ridingTurtle === turtle) return; // don't move if being ridden
         turtle.position.add(turtle.userData.direction.clone().multiplyScalar(turtle.userData.speed * delta));
         if (Math.abs(turtle.position.x) > 45) turtle.userData.direction.x *= -1;
         if (Math.abs(turtle.position.z) > 45) turtle.userData.direction.z *= -1;
         turtle.rotation.y = Math.atan2(turtle.userData.direction.x, turtle.userData.direction.z);
     });
 
+    // Rideable turtle mechanic
     if (!ridingTurtle && diver && gameState.isPlaying) {
         seaTurtles.forEach(turtle => {
             if (diver.position.distanceTo(turtle.position) < 2.5 && keys.shift) {
@@ -915,6 +1044,7 @@ function updateMarineLife(time, delta) {
         if (diver && !octo.userData.hidden && octo.userData.inkCooldown <= 0 && octo.position.distanceTo(diver.position) < 5) {
             octo.userData.hidden = true;
             octo.userData.inkCooldown = 10;
+            // Ink cloud in scene
             const inkMesh = new THREE.Mesh(
                 new THREE.SphereGeometry(2.5, 16, 16),
                 new THREE.MeshPhongMaterial({ color: 0x1a1a2e, transparent: true, opacity: 0.75 })
@@ -922,6 +1052,7 @@ function updateMarineLife(time, delta) {
             inkMesh.position.copy(diver.position);
             scene.add(inkMesh);
             setTimeout(() => scene.remove(inkMesh), 3000);
+            // Screen blackout
             const blindDiv = document.createElement('div');
             Object.assign(blindDiv.style, {
                 position:'fixed', top:'0', left:'0', width:'100%', height:'100%',
@@ -934,6 +1065,7 @@ function updateMarineLife(time, delta) {
             setTimeout(() => { octo.visible = true; octo.userData.hidden = false; }, 6000);
             octo.visible = false;
         }
+        // Tentacle sway
         for (let t = 1; t < octo.children.length; t++) {
             octo.children[t].rotation.z = Math.sin(time * 2 + t) * 0.3;
         }
@@ -945,6 +1077,7 @@ function updateTreasureAndPowerups() {
     treasureChests.forEach(chest => {
         if (chest.userData.collected) return;
         chest.position.y += Math.sin(Date.now() * 0.002) * 0.003;
+        // Glow pulse
         if (chest.userData.light) chest.userData.light.intensity = 0.3 + Math.sin(Date.now() * 0.003) * 0.2;
 
         if (chest.userData.opening) {
@@ -1022,6 +1155,7 @@ function createStarfish() {
     star.position.set(Math.random()*80-40, Math.random()*30-15, Math.random()*80-40);
     star.rotation.x = -Math.PI / 2;
     star.userData = { type: 'starfish', collected: false, bobOffset: Math.random()*Math.PI*2 };
+    // Sprite glow halo
     const haloCanvas = document.createElement('canvas');
     haloCanvas.width = haloCanvas.height = 64;
     const hc = haloCanvas.getContext('2d');
@@ -1041,6 +1175,7 @@ function createPearl() {
     const mat = new THREE.MeshPhongMaterial({ color: 0xffffff, emissive: 0x44aaff, emissiveIntensity: 0.5, shininess: 150 });
     const pearl = new THREE.Mesh(geo, mat);
     pearl.position.set(Math.random()*80-40, Math.random()*30-15, Math.random()*80-40);
+    // Pearl glow halo
     const hc = document.createElement('canvas'); hc.width = hc.height = 64;
     const ctx = hc.getContext('2d');
     const g = ctx.createRadialGradient(32,32,0,32,32,32);
@@ -1059,6 +1194,7 @@ function createOcean() {
     ocean = new THREE.Mesh(geo, mat);
     ocean.rotation.x = -Math.PI / 2; ocean.position.y = 30;
     scene.add(ocean);
+    // Animate surface
     ocean.userData = { time: 0 };
 
     const skyGeo = new THREE.PlaneGeometry(200, 200);
@@ -1067,6 +1203,7 @@ function createOcean() {
     const skyGrad = sCtx.createLinearGradient(0, 0, 0, 512);
     skyGrad.addColorStop(0, '#87ceeb'); skyGrad.addColorStop(0.4, '#1a8fbf'); skyGrad.addColorStop(1, '#1a3a5c');
     sCtx.fillStyle = skyGrad; sCtx.fillRect(0, 0, 512, 512);
+    // Clouds
     for (let c = 0; c < 8; c++) {
         sCtx.fillStyle = 'rgba(255,255,255,0.7)';
         const cx = Math.random()*512, cy = Math.random()*150+20;
@@ -1127,20 +1264,20 @@ function createDiver() {
     const tank = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.45, 1.6, 16), tankMat);
     tank.position.set(-1.1, -0.3, 0); diverGroup.add(tank);
     const finMat = new THREE.MeshPhongMaterial({ color: 0x00ccff, shininess: 50 });
-    [0.6, -0.6].forEach((fz) => {
+    [[0.6],[-0.6]].forEach(([fz]) => {
         const fin = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.12, 1.3), finMat);
         fin.position.set(-1.6, -0.9, fz); diverGroup.add(fin);
     });
     const armMat = new THREE.MeshPhongMaterial({ color: 0x3a3a5a });
-    [0.9, -0.9].forEach((az) => {
+    [[0.9],[-0.9]].forEach(([az]) => {
         const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.23, 0.23, 1.3, 8), armMat);
         arm.position.set(-0.9, 0.35, az); arm.rotation.z = Math.PI / 3; diverGroup.add(arm);
     });
+    // Diver light
     const diverLight = new THREE.PointLight(0xffffff, 0.4, 8);
     diverLight.position.set(1.5, 0, 0); diverGroup.add(diverLight);
     diverGroup.position.set(0, 0, 0);
-    scene.add(diverGroup); 
-    diver = diverGroup;
+    scene.add(diverGroup); diver = diverGroup;
 }
 
 function createCoralReefs() {
@@ -1154,6 +1291,7 @@ function createCoralReefs() {
         const coralMesh = new THREE.Mesh(new THREE.ConeGeometry(0.6+Math.random()*0.6, height, 8), coralMat);
         coralMesh.position.y = height / 2;
         coralGroup.add(coralMesh);
+        // Branch
         if (Math.random() > 0.4) {
             const branchHeight = height * 0.6;
             const branch = new THREE.Mesh(new THREE.ConeGeometry(0.25, branchHeight, 6), coralMat);
@@ -1178,6 +1316,85 @@ function createCollectibles() {
     for (let i = 0; i < 15; i++) createPearl();
 }
 
+// ===== BOSS SHARK =====
+function createBossShark() {
+    if (bossSpawned || gameState.difficulty !== 'hard') return;
+    bossSpawned = true;
+    const group = new THREE.Group();
+    const mat = new THREE.MeshPhongMaterial({ color: 0x222233, emissive: 0xff0000, emissiveIntensity: 0.15, shininess: 60 });
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(1.4, 1.0, 6, 16), mat);
+    body.rotation.z = Math.PI/2; group.add(body);
+    const head = new THREE.Mesh(new THREE.ConeGeometry(1.6, 2.8, 16), mat);
+    head.position.x = 4.0; group.add(head);
+    const tail = new THREE.Mesh(new THREE.ConeGeometry(1.2, 2.8, 8), mat);
+    tail.rotation.z = -Math.PI/2; tail.position.x = -4.4; group.add(tail);
+    const fin = new THREE.Mesh(new THREE.ConeGeometry(0.8, 1.8, 8), mat);
+    fin.position.y = 1.4; group.add(fin);
+    const finL = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.15, 0.6), mat);
+    finL.position.set(0, 0, 1.2); group.add(finL);
+    const finR = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.15, 0.6), mat);
+    finR.position.set(0, 0, -1.2); group.add(finR);
+    // Red eyes
+    const eyeMat = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+    [0.6, -0.6].forEach(ez => {
+        const eye = new THREE.Mesh(new THREE.SphereGeometry(0.2, 8, 8), eyeMat);
+        eye.position.set(3.0, 0.4, ez); group.add(eye);
+    });
+    // Red point light
+    const redLight = new THREE.PointLight(0xff0000, 0.8, 12);
+    redLight.position.set(0, 0, 0); group.add(redLight);
+    group.position.set(
+        diver ? diver.position.x + 40 : 40,
+        diver ? diver.position.y : 0,
+        diver ? diver.position.z + 40 : 40
+    );
+    group.userData = { type: 'bossShark', speed: 11, chaseSpeed: 11, direction: new THREE.Vector3(-1,0,-1).normalize(), health: 1 };
+    scene.add(group); bossShark = group;
+    if (sounds.bossRoar) sounds.bossRoar();
+    showNotification('🦈💀 BOSS SHARK INCOMING! 💀🦈', '#ff0000', '28px', 4000);
+    // Red flash
+    const flash = document.createElement('div');
+    Object.assign(flash.style, { position:'fixed',top:'0',left:'0',width:'100%',height:'100%',backgroundColor:'rgba(255,0,0,0.4)',pointerEvents:'none',zIndex:'1000',transition:'opacity 1s' });
+    document.body.appendChild(flash);
+    setTimeout(() => { flash.style.opacity='0'; }, 200);
+    setTimeout(() => flash.remove(), 1200);
+}
+
+function updateBossShark(time, sd) {
+    if (!bossShark || !gameState.isPlaying) return;
+    const data = bossShark.userData;
+    if (diver) {
+        const toDiver = new THREE.Vector3().subVectors(diver.position, bossShark.position).normalize();
+        bossShark.position.addScaledVector(toDiver, data.chaseSpeed * sd);
+        data.direction = toDiver.clone();
+        bossShark.position.x = Math.max(-48, Math.min(48, bossShark.position.x));
+        bossShark.position.y = Math.max(-19, Math.min(28, bossShark.position.y));
+        bossShark.position.z = Math.max(-48, Math.min(48, bossShark.position.z));
+    }
+    // Tail wag
+    if (bossShark.children[1]) bossShark.children[1].rotation.y = Math.sin(time*3)*0.35;
+    bossShark.rotation.x = -data.direction.y * 0.5;
+    bossShark.rotation.y = Math.atan2(data.direction.x, data.direction.z);
+    // Red light pulse
+    if (bossShark.children[7]) bossShark.children[7].intensity = 0.5 + Math.sin(time*4)*0.4;
+    // Hit player
+    if (diver && gameState.hitCooldown <= 0) {
+        if (bossShark.position.distanceTo(diver.position) < 5.5) {
+            if (activePowerUps.shield.active) {
+                showNotification('🛡️ SHIELD BLOCKED BOSS!', '#4ecdc4', '22px', 800);
+            } else {
+                gameState.oxygen = Math.max(0, gameState.oxygen - 30);
+                gameState.hitCooldown = 1.0;
+                triggerScreenShake(1.5);
+                updateUI(); flashDamage();
+                spawnFloatingText('-30', diver.position.clone(), '#ff0000');
+                if (sounds.sharkBite) sounds.sharkBite();
+                if (gameState.oxygen <= 0) endGame(false);
+            }
+        }
+    }
+}
+
 function createEnemies() {
     const sharkCount = gameState.difficulty === 'easy' ? 3 : gameState.difficulty === 'normal' ? 5 : 7;
     const jellyCount = gameState.difficulty === 'easy' ? 4 : gameState.difficulty === 'normal' ? 6 : 8;
@@ -1196,11 +1413,12 @@ function createShark() {
     tail.rotation.z = -Math.PI / 2; tail.position.x = -2.2; sharkGroup.add(tail);
     const fin = new THREE.Mesh(new THREE.ConeGeometry(0.45, 0.9, 8), mat);
     fin.position.y = 0.7; sharkGroup.add(fin);
+    // Eye
     const eyeMat = new THREE.MeshBasicMaterial({ color: 0x111111 });
     const eyeL = new THREE.Mesh(new THREE.SphereGeometry(0.1, 8, 8), eyeMat);
     eyeL.position.set(1.5, 0.25, 0.55); sharkGroup.add(eyeL);
     sharkGroup.position.set(Math.random()*80-40, Math.random()*12-4, Math.random()*80-40);
-    sharkGroup.userData = { type:'shark', speed:4.5, chaseSpeed:7, direction:new THREE.Vector3(Math.random()-0.5, 0, Math.random()-0.5).normalize() };
+    sharkGroup.userData = { type:'shark', speed:4.5, chaseSpeed:8, direction:new THREE.Vector3(Math.random()-0.5, (Math.random()-0.5)*0.3, Math.random()-0.5).normalize(), patrolY: Math.random()*18 - 10 };
     scene.add(sharkGroup); sharks.push(sharkGroup);
 }
 
@@ -1209,6 +1427,7 @@ function createJellyfish() {
     const bellMat = new THREE.MeshPhongMaterial({ color: 0xffaaff, transparent: true, opacity: 0.7, emissive: 0xff44aa, emissiveIntensity: 0.3 });
     const bell = new THREE.Mesh(new THREE.SphereGeometry(0.9, 24, 16, 0, Math.PI*2, 0, Math.PI/2), bellMat);
     jellyGroup.add(bell);
+    // Inner glow
     const innerGlow = new THREE.Mesh(new THREE.SphereGeometry(0.65, 12, 12, 0, Math.PI*2, 0, Math.PI/2), new THREE.MeshPhongMaterial({ color: 0xffccff, emissive: 0xff88cc, emissiveIntensity: 0.5, transparent: true, opacity: 0.4 }));
     jellyGroup.add(innerGlow);
     for (let i = 0; i < 8; i++) {
@@ -1233,6 +1452,51 @@ function createBubbleParticles() {
 }
 
 // ===== UI FUNCTIONS =====
+// ===== PAUSE MENU =====
+function createPauseMenu() {
+    pauseMenu = document.createElement('div');
+    Object.assign(pauseMenu.style, {
+        position: 'fixed', top: '0', left: '0', width: '100%', height: '100%',
+        background: 'rgba(5,15,35,0.92)', display: 'none',
+        justifyContent: 'center', alignItems: 'center', zIndex: '500',
+        flexDirection: 'column', gap: '20px'
+    });
+    pauseMenu.innerHTML = `
+        <div style="font-family:Orbitron,monospace;font-size:3rem;color:#00fff7;text-shadow:0 0 30px #00fff7;margin-bottom:10px">⏸ PAUSED</div>
+        <button id="pause-resume" style="padding:16px 50px;font-family:Orbitron,monospace;font-size:1.2rem;background:#1a3a5c;color:#00fff7;border:2px solid #00fff7;border-radius:12px;cursor:pointer">▶ RESUME</button>
+        <button id="pause-restart" style="padding:16px 50px;font-family:Orbitron,monospace;font-size:1.2rem;background:#1a3a5c;color:#ffd700;border:2px solid #ffd700;border-radius:12px;cursor:pointer">🔄 RESTART</button>
+        <button id="pause-quit" style="padding:16px 50px;font-family:Orbitron,monospace;font-size:1.2rem;background:#1a3a5c;color:#ff4757;border:2px solid #ff4757;border-radius:12px;cursor:pointer">🚪 QUIT TO MENU</button>
+        <div style="font-family:Orbitron,monospace;font-size:0.85rem;color:#4da8da;margin-top:10px">Press ESC to resume</div>
+    `;
+    document.body.appendChild(pauseMenu);
+    document.getElementById('pause-resume').onclick = togglePause;
+    document.getElementById('pause-restart').onclick = () => { togglePause(); restartGame(); };
+    document.getElementById('pause-quit').onclick = () => {
+        togglePause();
+        endGame(false);
+        stopBackgroundMusic(); stopHeartbeat();
+        gameState.isPlaying = false;
+        document.getElementById('start-screen').style.display = 'flex';
+        document.getElementById('game-ui').style.display = 'none';
+        document.getElementById('gameover-screen').style.display = 'none';
+        document.getElementById('victory-screen').style.display = 'none';
+    };
+}
+
+function togglePause() {
+    if (!gameState.isPlaying && !isPaused) return;
+    isPaused = !isPaused;
+    pauseMenu.style.display = isPaused ? 'flex' : 'none';
+    if (isPaused) {
+        stopBackgroundMusic();
+        mouseLookEnabled = false;
+        document.body.style.cursor = 'auto';
+        document.exitPointerLock?.();
+    } else {
+        startBackgroundMusic();
+    }
+}
+
 function addQuitButton() {
     const btn = document.createElement('button');
     btn.innerHTML = '🚪 QUIT TO MENU';
@@ -1283,7 +1547,7 @@ function addVolumeControl() {
 function addMouseInstruction() {
     const instr = document.createElement('div');
     Object.assign(instr.style, { position:'fixed', bottom:'80px', right:'20px', backgroundColor:'rgba(0,0,0,0.8)', color:'#00fff7', padding:'10px 18px', borderRadius:'25px', fontSize:'11px', fontFamily:'Orbitron,monospace', zIndex:'200', pointerEvents:'none', border:'1px solid #00fff7' });
-    instr.innerHTML = '🖱️ CLICK TO LOOK | ESC RELEASE | 🐢 HOLD SHIFT NEAR TURTLE TO RIDE';
+    instr.innerHTML = '🖱️ CLICK TO LOOK | ESC RELEASE | 🎮 RIGHT STICK = LOOK | L1/R1 = UP/DOWN | 🐢 SHIFT = RIDE TURTLE';
     document.body.appendChild(instr);
 }
 
@@ -1292,6 +1556,7 @@ function showStartScreen() {
     if (ls) ls.style.display = 'none';
     const ss = document.getElementById('start-screen');
     if (ss) ss.style.display = 'flex';
+    // Show high score on start screen
     const hs = document.getElementById('high-score-display');
     if (hs) hs.textContent = `🏆 BEST: ${highScore}`;
 }
@@ -1305,7 +1570,10 @@ function setupEventListeners() {
         if (e.key.toLowerCase()==='d') keys.d=true;
         if (e.key===' ') { keys.space=true; e.preventDefault(); }
         if (e.key==='Shift') { keys.shift=true; e.preventDefault(); }
-        if (e.key==='Escape') { mouseLookEnabled=false; document.body.style.cursor='auto'; document.exitPointerLock?.(); }
+        if (e.key==='Escape') {
+            if (gameState.isPlaying || isPaused) { togglePause(); }
+            else { mouseLookEnabled=false; document.body.style.cursor='auto'; document.exitPointerLock?.(); }
+        }
     });
     document.addEventListener('keyup', e => {
         if (e.key.toLowerCase()==='w') keys.w=false;
@@ -1351,27 +1619,122 @@ function setupEventListeners() {
 }
 
 function initGamepadSupport() {
-    window.addEventListener('gamepadconnected', e => { gamepadConnected = true; });
-    window.addEventListener('gamepaddisconnected', () => { gamepadConnected = false; });
+    // Use both event and polling — some browsers skip the event
+    window.addEventListener('gamepadconnected', e => {
+        gamepadConnected = true;
+        console.log('Controller connected:', e.gamepad.id);
+        showNotification('🎮 CONTROLLER CONNECTED!', '#00fff7', '18px', 2500);
+    });
+    window.addEventListener('gamepaddisconnected', () => {
+        gamepadConnected = false;
+        gamepadMoveX = 0; gamepadMoveZ = 0; gamepadAscend = 0;
+    });
 }
 
-function updateGamepadInput() {
-    if (!gamepadConnected) return;
-    const gp = navigator.getGamepads()[0];
-    if (!gp) return;
-    const dz = 0.15;
-    const rx = gp.axes[0]||0, ry = gp.axes[1]||0;
-    gamepadMoveX = Math.abs(rx)>dz?rx:0;
-    gamepadMoveZ = Math.abs(ry)>dz?ry:0;
-    if (gp.axes.length>3) {
-        const cx=Math.abs(gp.axes[2])>dz?gp.axes[2]:0, cy=Math.abs(gp.axes[3])>dz?gp.axes[3]:0;
-        if (cx||cy) { const s=0.008; targetRotationX+=cx*s; targetRotationY=Math.max(-Math.PI/2.5,Math.min(Math.PI/2.5,targetRotationY+cy*s)); }
+// ===== GAMEPAD DEBUG OVERLAY =====
+let debugOverlay = null;
+function createGamepadDebug() {
+    debugOverlay = document.createElement('div');
+    Object.assign(debugOverlay.style, {
+        position: 'fixed', top: '120px', left: '10px',
+        background: 'rgba(0,0,0,0.85)', color: '#00fff7',
+        fontFamily: 'monospace', fontSize: '11px',
+        padding: '10px', borderRadius: '8px',
+        border: '1px solid #00fff7', zIndex: '9999',
+        lineHeight: '1.6', minWidth: '220px',
+        display: 'none', pointerEvents: 'none'
+    });
+    document.body.appendChild(debugOverlay);
+
+    // Toggle with backtick key
+    document.addEventListener('keydown', e => {
+        if (e.key === '`') {
+            debugOverlay.style.display = debugOverlay.style.display === 'none' ? 'block' : 'none';
+        }
+    });
+}
+
+function updateGamepadDebug() {
+    if (!debugOverlay || debugOverlay.style.display === 'none') return;
+    const gamepads = navigator.getGamepads ? navigator.getGamepads() : [];
+    let gp = null;
+    for (let i = 0; i < gamepads.length; i++) {
+        if (gamepads[i] && gamepads[i].connected) { gp = gamepads[i]; break; }
     }
+    if (!gp) { debugOverlay.innerHTML = '🎮 No controller found'; return; }
+
+    let html = `🎮 <b>${gp.id.substring(0,28)}</b><br>`;
+    html += `Axes (${gp.axes.length}):<br>`;
+    gp.axes.forEach((v, i) => {
+        const bar = '█'.repeat(Math.round(Math.abs(v) * 10));
+        const active = Math.abs(v) > 0.12 ? ' style="color:#ffff00"' : '';
+        html += `<span${active}>  [${i}]: ${v.toFixed(3)} ${bar}</span><br>`;
+    });
+    html += `Buttons:<br>`;
+    gp.buttons.forEach((b, i) => {
+        if (b.pressed || b.value > 0.1) {
+            html += `  <span style="color:#ff8800">[${i}] pressed (${b.value.toFixed(2)})</span><br>`;
+        }
+    });
+    html += '<br><span style="color:#aaa">Press ` to hide</span>';
+    debugOverlay.innerHTML = html;
+}
+
+
+function updateGamepadInput() {
+    // Poll every frame — don't rely solely on the connect event
+    const gamepads = navigator.getGamepads ? navigator.getGamepads() : [];
+    let gp = null;
+    for (let i = 0; i < gamepads.length; i++) {
+        if (gamepads[i] && gamepads[i].connected) { gp = gamepads[i]; break; }
+    }
+    if (!gp) {
+        gamepadConnected = false;
+        gamepadMoveX = 0; gamepadMoveZ = 0; gamepadAscend = 0;
+        return;
+    }
+    gamepadConnected = true;
+
+    const dz = 0.12; // deadzone
+
+    // Left stick → movement (axes 0, 1)
+    const lx = gp.axes[0] || 0, ly = gp.axes[1] || 0;
+    gamepadMoveX = Math.abs(lx) > dz ? lx : 0;
+    gamepadMoveZ = Math.abs(ly) > dz ? ly : 0;
+
+    // Right stick → camera look
+    // Ucom joystick maps right stick as buttons: right=1, left=0, up=3(?), down=2(?)
+    // We use button values (0.0 to 1.0) to drive camera rotation
+    const lookSensitivity = 0.06;
+    const lookRight  = gp.buttons[1]?.value || (gp.buttons[1]?.pressed ? 1 : 0);
+    const lookLeft   = gp.buttons[0]?.value || (gp.buttons[0]?.pressed ? 1 : 0);
+    const lookDown   = gp.buttons[2]?.value || (gp.buttons[2]?.pressed ? 1 : 0);
+    const lookUp     = gp.buttons[3]?.value || (gp.buttons[3]?.pressed ? 1 : 0);
+    targetRotationX += (lookRight - lookLeft) * lookSensitivity;
+    targetRotationY += (lookDown - lookUp) * lookSensitivity;
+    targetRotationY = Math.max(-Math.PI / 2.5, Math.min(Math.PI / 2.5, targetRotationY));
+
+    // Also try axes 2,3 in case some setups use those
+    if (gp.axes.length > 3) {
+        const rx = Math.abs(gp.axes[2]) > dz ? gp.axes[2] : 0;
+        const ry = Math.abs(gp.axes[3]) > dz ? gp.axes[3] : 0;
+        if (rx) targetRotationX += rx * lookSensitivity;
+        if (ry) { targetRotationY += ry * lookSensitivity; targetRotationY = Math.max(-Math.PI/2.5, Math.min(Math.PI/2.5, targetRotationY)); }
+    }
+
+    // Shoulder buttons → ascend / descend (L1=4, R1=5)
     gamepadAscend = 0;
-    if (gp.buttons[4]?.pressed) gamepadAscend=1;
-    if (gp.buttons[5]?.pressed) gamepadAscend=-1;
-    if (gp.buttons[0]?.pressed && !gameState.isPlaying && !gameState.isGameOver) startGame();
-    if (gp.buttons[9]?.pressed && (gameState.isGameOver||gameState.isVictory)) restartGame();
+    if (gp.buttons[4]?.pressed) gamepadAscend = 1;
+    if (gp.buttons[5]?.pressed) gamepadAscend = -1;
+
+    // Also support triggers for ascend/descend (L2=6, R2=7)
+    if (gp.buttons[6]?.value > 0.1) gamepadAscend = -1;
+    if (gp.buttons[7]?.value > 0.1) gamepadAscend = 1;
+
+    // A / Cross → start game
+    if (gp.buttons[0]?.pressed && !gameState.isPlaying && !gameState.isGameOver && !gameState.isVictory) startGame();
+    // Start / Options → restart after game over
+    if (gp.buttons[9]?.pressed && (gameState.isGameOver || gameState.isVictory)) restartGame();
 }
 
 function startGame() {
@@ -1386,6 +1749,9 @@ function startGame() {
     gameState.isPlaying=true; gameState.isGameOver=false; gameState.isVictory=false;
     gameState.hitCooldown=0; gameState.combo=0; gameState.pearlsCollected=0; gameState.treasuresCollected=0;
     gameState.checkpoint=null;
+    chaseTimer=0; isChaseActive=false;
+    bossSpawned=false;
+    if (bossShark) { scene.remove(bossShark); bossShark=null; }
     if (diver) diver.position.set(0,0,0);
     sharks.forEach(s=>scene.remove(s)); jellyfish.forEach(j=>scene.remove(j));
     sharks=[]; jellyfish=[];
@@ -1396,6 +1762,14 @@ function startGame() {
     treasureChests.forEach(c=>{c.userData.collected=false;c.visible=true;c.userData.opening=false;c.userData.openProgress=0;if(c.userData.lidGroup)c.userData.lidGroup.rotation.x=0;if(c.userData.light)c.userData.light.intensity=0.3;});
     document.getElementById('start-screen').style.display='none';
     document.getElementById('game-ui').style.display='flex';
+    const badge = document.getElementById('difficulty-badge');
+    if (badge) {
+        const colors = { easy:'#2ed573', normal:'#ffd700', hard:'#ff4757' };
+        badge.style.display = 'block';
+        badge.style.color = colors[gameState.difficulty];
+        badge.style.borderColor = colors[gameState.difficulty];
+        badge.textContent = gameState.difficulty.toUpperCase() + ' MODE';
+    }
     document.getElementById('gameover-screen').style.display='none';
     document.getElementById('victory-screen').style.display='none';
     if (minimapCanvas) minimapCanvas.style.display='block';
@@ -1410,6 +1784,7 @@ function startTimer() {
         if (!gameState.isPlaying) return;
         gameState.timeLeft--;
         gameState.oxygen = Math.max(0, gameState.oxygen - 0.25);
+        // Checkpoint at half starfish
         if (!gameState.checkpoint && gameState.starfishCollected >= Math.floor(gameState.targetStarfish / 2)) {
             gameState.checkpoint = { score: gameState.score, oxygen: gameState.oxygen, timeLeft: gameState.timeLeft, starfish: gameState.starfishCollected };
             showNotification('💾 CHECKPOINT SAVED! Halfway there!', '#00ffcc', '20px', 2500);
@@ -1436,6 +1811,30 @@ function updateUI() {
     const targetEl = document.getElementById('target');
     if (targetEl) targetEl.textContent = `${gameState.starfishCollected}/${gameState.targetStarfish}`;
     updatePowerUpHUD();
+
+    // Timer warning — last 30 seconds turns red and pulses
+    const timerEl2 = document.getElementById('timer');
+    if (timerEl2 && gameState.timeLeft <= 30) {
+        timerEl2.style.color = '#ff4757';
+        timerEl2.style.textShadow = `0 0 ${10 + Math.sin(Date.now()*0.01)*8}px #ff4757`;
+        timerEl2.style.animation = 'timerPulse 0.5s infinite';
+    } else if (timerEl2) {
+        timerEl2.style.color = '#00fff7';
+        timerEl2.style.textShadow = '0 0 10px #00fff7';
+        timerEl2.style.animation = 'none';
+    }
+
+    // Combo display
+    const comboEl = document.getElementById('combo-display');
+    if (comboEl) {
+        if (gameState.combo > 1) {
+            comboEl.textContent = `🔥 x${gameState.combo} COMBO`;
+            comboEl.style.opacity = '1';
+            comboEl.style.transform = `scale(${1 + gameState.combo * 0.05})`;
+        } else {
+            comboEl.style.opacity = '0';
+        }
+    }
 }
 
 function endGame(victory) {
@@ -1449,8 +1848,9 @@ function endGame(victory) {
     const timeBonus = Math.max(0, gameState.timeLeft * 10);
     const pearlBonus = (gameState.pearlsCollected || 0) * 25;
     const treasureBonus = (gameState.treasuresCollected || 0) * 500;
-    const finalScore = gameState.score + starBonus + timeBonus + pearlBonus + treasureBonus;
+    const finalScore = gameState.score + starBonus + timeBonus;
 
+    // High score
     if (finalScore > highScore) {
         highScore = finalScore;
         localStorage.setItem('oceanRescueHighScore', highScore);
@@ -1463,7 +1863,7 @@ function endGame(victory) {
         if (sounds.victory) sounds.victory();
         document.getElementById('victory-score').textContent = finalScore;
         const vBreak = document.getElementById('victory-breakdown');
-        if (vBreak) vBreak.innerHTML = buildScoreBreakdown(starBonus, timeBonus, pearlBonus, treasureBonus);
+        if (vBreak) vBreak.innerHTML = buildScoreBreakdown(starBonus, timeBonus, pearlBonus);
         const hsBadge = document.getElementById('victory-hs');
         if (hsBadge) hsBadge.textContent = finalScore >= highScore ? '🏆 NEW HIGH SCORE!' : `🏆 Best: ${highScore}`;
         document.getElementById('victory-screen').style.display='flex';
@@ -1471,46 +1871,55 @@ function endGame(victory) {
         if (sounds.gameOver) sounds.gameOver();
         document.getElementById('final-score').textContent = finalScore;
         const breakdown = document.getElementById('gameover-breakdown');
-        if (breakdown) breakdown.innerHTML = buildScoreBreakdown(starBonus, timeBonus, pearlBonus, treasureBonus);
+        if (breakdown) breakdown.innerHTML = buildScoreBreakdown(starBonus, timeBonus, pearlBonus);
         const goHs = document.getElementById('gameover-hs');
         if (goHs) goHs.textContent = `🏆 Best: ${highScore}`;
         document.getElementById('gameover-title').textContent = gameState.oxygen<=0?'💀 OUT OF OXYGEN! 💀':'⏰ TIME UP! ⏰';
+        // Checkpoint restore option
         if (gameState.checkpoint) {
             showNotification('💾 Checkpoint saved at ' + gameState.checkpoint.starfish + ' starfish collected!', '#00ffcc', '16px', 4000);
         }
         document.getElementById('gameover-screen').style.display='flex';
     }
     document.getElementById('game-ui').style.display='none';
+    const diffBadge = document.getElementById('difficulty-badge');
+    if (diffBadge) diffBadge.style.display = 'none';
+    // Leaderboard
     renderLeaderboard();
 }
 
-function buildScoreBreakdown(starBonus, timeBonus, pearlBonus, treasureBonus) {
+function buildScoreBreakdown(starBonus, timeBonus, pearlBonus) {
     return `
         <div style="font-family:Orbitron,monospace;font-size:14px;color:#aaddff;margin-top:10px;line-height:2">
             ⭐ Starfish: <span style="color:#ff8888">+${gameState.score}</span><br>
             🌟 Starfish Bonus: <span style="color:#ffaa44">+${starBonus}</span><br>
             ⏱️ Time Bonus: <span style="color:#44ffaa">+${timeBonus}</span><br>
             💎 Pearls: <span style="color:#aaccff">+${pearlBonus}</span><br>
-            💰 Treasures: <span style="color:#ffd700">+${treasureBonus}</span>
+            💰 Treasures: <span style="color:#ffd700">+${(gameState.treasuresCollected||0)*500}</span>
         </div>`;
 }
 
 function renderLeaderboard() {
+    if (!sessionScores.length) return;
+    const row = (s, i) => `<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #ffffff22;font-size:13px">
+        <span>${i+1}. ${s.victory?'✅':'❌'} ${s.difficulty.toUpperCase()}</span>
+        <span style="color:#ffd700">${s.score}</span>
+        <span style="color:#888">${s.date}</span>
+    </div>`;
+    const html = sessionScores.map(row).join('');
     const el = document.getElementById('leaderboard-list');
-    if (!el || !sessionScores.length) return;
-    el.innerHTML = sessionScores.map((s,i)=>
-        `<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #ffffff22;font-size:13px">
-            <span>${i+1}. ${s.victory?'✅':'❌'} ${s.difficulty.toUpperCase()}</span>
-            <span style="color:#ffd700">${s.score}</span>
-            <span style="color:#888">${s.date}</span>
-        </div>`
-    ).join('');
+    if (el) el.innerHTML = html;
+    const elV = document.getElementById('leaderboard-list-v');
+    if (elV) elV.innerHTML = html;
 }
 
 function restartGame() {
     gameState.score=0; gameState.oxygen=100; gameState.starfishCollected=0;
     gameState.isPlaying=true; gameState.isGameOver=false; gameState.isVictory=false;
     gameState.hitCooldown=0; gameState.combo=0; gameState.pearlsCollected=0; gameState.treasuresCollected=0;
+    chaseTimer=0; isChaseActive=false;
+    bossSpawned=false;
+    if (bossShark) { scene.remove(bossShark); bossShark=null; }
     if (diver) diver.position.set(0,0,0);
     starfish.forEach(s=>{s.userData.collected=false;s.visible=true;});
     pearls.forEach(p=>{p.userData.collected=false;p.visible=true;});
@@ -1540,12 +1949,10 @@ function updateDiver(delta) {
     if (keys.d) inputX=1; if (keys.a) inputX=-1;
     if (keys.s) inputZ=1; if (keys.w) inputZ=-1;
     if (keys.space) moveY=1; if (keys.shift) moveY=-1;
-    if (gamepadConnected) {
-        updateGamepadInput();
-        if (Math.abs(gamepadMoveX)>0.1) inputX=gamepadMoveX;
-        if (Math.abs(gamepadMoveZ)>0.1) inputZ=gamepadMoveZ;
-        if (Math.abs(gamepadAscend)>0.1) moveY=gamepadAscend;
-    }
+    // Always apply gamepad (updateGamepadInput runs every frame in animate loop)
+    if (Math.abs(gamepadMoveX) > 0.1) inputX = gamepadMoveX;
+    if (Math.abs(gamepadMoveZ) > 0.1) inputZ = gamepadMoveZ;
+    if (Math.abs(gamepadAscend) > 0.1) moveY = gamepadAscend;
     const camDir = new THREE.Vector3(); camera.getWorldDirection(camDir);
     const forward = new THREE.Vector3(camDir.x,0,camDir.z).normalize();
     const right = new THREE.Vector3(-forward.z,0,forward.x);
@@ -1555,7 +1962,22 @@ function updateDiver(delta) {
     diver.position.x=Math.max(-48,Math.min(48,diver.position.x));
     diver.position.y=Math.max(-18,Math.min(28,diver.position.y));
     diver.position.z=Math.max(-48,Math.min(48,diver.position.z));
-    diver.rotation.z = Math.sin(Date.now()*0.002)*0.05;
+    // Diver swimming animation — limbs move when moving
+    const isMoving = inputX !== 0 || inputZ !== 0 || moveY !== 0;
+    const swimTime = Date.now() * 0.004;
+    if (isMoving) {
+        // Arms swing
+        if (diver.children[6]) diver.children[6].rotation.x = Math.sin(swimTime) * 0.5;
+        if (diver.children[7]) diver.children[7].rotation.x = -Math.sin(swimTime) * 0.5;
+        // Fins kick
+        if (diver.children[4]) diver.children[4].rotation.x = Math.sin(swimTime * 1.5) * 0.3;
+        if (diver.children[5]) diver.children[5].rotation.x = -Math.sin(swimTime * 1.5) * 0.3;
+        // Body tilt forward when moving
+        diver.rotation.z = Math.sin(swimTime * 0.5) * 0.04;
+    } else {
+        // Gentle idle bob
+        diver.rotation.z = Math.sin(Date.now()*0.002)*0.05;
+    }
     currentRotationX += (targetRotationX-currentRotationX)*0.1;
     currentRotationY += (targetRotationY-currentRotationY)*0.1;
     const rr=cameraDistance, xO=Math.sin(currentRotationX)*Math.cos(currentRotationY)*rr;
@@ -1593,8 +2015,13 @@ function updateCollectibles(time) {
             gameState.lastCollectTime=Date.now()/1000;
             updateUI();
             if (sounds.collect) sounds.collect();
+            spawnFloatingText('+' + (50 + gameState.combo*5), star.position.clone(), '#ffdd00');
             if (gameState.combo>1) showNotification('🔥 x'+gameState.combo+' COMBO! +'+gameState.combo*5,'#ffaa00','20px',700);
             if (gameState.starfishCollected>=gameState.targetStarfish) setTimeout(()=>endGame(true),500);
+            // Boss spawn at halfway on hard
+            if (gameState.difficulty==='hard' && !bossSpawned && gameState.starfishCollected >= Math.floor(gameState.targetStarfish/2)) {
+                createBossShark();
+            }
         }
     }
 
@@ -1612,145 +2039,94 @@ function updateCollectibles(time) {
     if ((Date.now()/1000-gameState.lastCollectTime)>3) gameState.combo=0;
 }
 
-// ===== UPDATED ENEMIES WITH CORRECT CHASE BEHAVIOR =====
 function updateEnemies(time, delta) {
     if (!gameState.isPlaying) return;
     const sd = Math.min(delta, 0.033);
-    if (gameState.hitCooldown > 0) gameState.hitCooldown -= sd;
-    
-    // CHASE TIMER SYSTEM - Only on HARD difficulty
-    if (gameState.difficulty === 'hard') {
-        // Update chase timer continuously
-        chaseTimer += sd;
-        
-        // Chase for 10 seconds, then rest for 5 seconds (15 second total cycle)
-        if (chaseTimer >= CHASE_DURATION + REST_DURATION) {
-            chaseTimer = 0;  // Reset timer to start new chase cycle
-        }
-        
-        // Chase is active for first 10 seconds of each 15-second cycle
-        isChaseActive = chaseTimer < CHASE_DURATION;
-        
-        // Visual feedback for player - red glow when sharks are chasing
-        if (isChaseActive) {
-            document.body.style.boxShadow = 'inset 0 0 30px rgba(255,0,0,0.3)';
-            document.body.style.border = '2px solid rgba(255,0,0,0.4)';
+    if (gameState.hitCooldown>0) gameState.hitCooldown-=sd;
+    if (gameState.difficulty==='hard') {
+        chaseTimer+=sd;
+        // 15s grace period at start, then alternate chase/rest cycles
+        const gracePeriod = 15;
+        if (chaseTimer > gracePeriod) {
+            const cycleTime = (chaseTimer - gracePeriod) % (CHASE_DURATION + REST_DURATION);
+            isChaseActive = cycleTime < CHASE_DURATION;
         } else {
-            document.body.style.boxShadow = 'none';
-            document.body.style.border = 'none';
+            isChaseActive = false;
         }
+        document.body.style.boxShadow=isChaseActive?'inset 0 0 50px rgba(255,0,0,0.2)':'none';
     }
-    
-    // Update each shark individually
-    sharks.forEach((shark, index) => {
-        if (!shark || !shark.userData) return;
-        const data = shark.userData;
-        
-        // HARD DIFFICULTY: Individual shark chase behavior
-        if (gameState.difficulty === 'hard' && isChaseActive && diver && gameState.isPlaying) {
-            // Calculate direction to diver
+    sharks.forEach(shark => {
+        if (!shark||!shark.userData) return;
+        const data=shark.userData;
+        // Determine if this shark should chase right now
+        const distToDiver = diver ? shark.position.distanceTo(diver.position) : 999;
+        const hardChase = gameState.difficulty === 'hard' && isChaseActive;
+        const normalChase = gameState.difficulty === 'normal' && distToDiver < 14;
+        const shouldChase = diver && (hardChase || normalChase);
+
+        // Speed: hard feels relentless, normal is a threat but beatable, easy never chases
+        const activeChaseSpeed = hardChase ? 10 : 6;
+
+        if (shouldChase) {
+            // Full 3D chase — compute direction to diver including Y axis
             const toDiver = new THREE.Vector3().subVectors(diver.position, shark.position).normalize();
-            
-            // Each shark has individual chase speed with slight variation
-            const individualSpeed = data.chaseSpeed + (index * 0.2);
-            shark.position.addScaledVector(toDiver, individualSpeed * sd);
-            
-            // Store the direction for rotation
-            data.direction = toDiver;
-            
-            // Add a small trail effect when chasing (visual feedback)
-            if (Math.random() < 0.05) {
-                const trail = new THREE.Mesh(
-                    new THREE.SphereGeometry(0.15, 4, 4),
-                    new THREE.MeshBasicMaterial({ color: 0xff4444, transparent: true, opacity: 0.5 })
-                );
-                trail.position.copy(shark.position);
-                scene.add(trail);
-                setTimeout(() => scene.remove(trail), 200);
-            }
-        } 
-        else {
-            // NORMAL MOVEMENT (when not chasing or on Easy/Normal difficulty)
+            shark.position.addScaledVector(toDiver, activeChaseSpeed * sd);
+            data.direction = toDiver.clone();
+            // Clamp within world bounds
+            shark.position.x = Math.max(-48, Math.min(48, shark.position.x));
+            shark.position.y = Math.max(-19, Math.min(28, shark.position.y));
+            shark.position.z = Math.max(-48, Math.min(48, shark.position.z));
+        } else {
+            // Patrol: move along direction (now includes Y component)
             shark.position.addScaledVector(data.direction, data.speed * sd);
-            
-            // Bounce off boundaries
             if (Math.abs(shark.position.x) > 48) data.direction.x *= -1;
             if (Math.abs(shark.position.z) > 48) data.direction.z *= -1;
-            
-            // Add some randomness to movement
-            if (Math.random() < 0.02) {
-                data.direction.x += (Math.random() - 0.5) * 0.3;
-                data.direction.z += (Math.random() - 0.5) * 0.3;
-                data.direction.normalize();
-            }
+            // Drift Y toward patrol target depth
+            if (data.patrolY === undefined) data.patrolY = Math.random() * 18 - 10;
+            const yDiff = data.patrolY - shark.position.y;
+            shark.position.y += yDiff * 0.5 * sd + Math.sin(time + shark.position.x * 0.1) * 0.03;
+            if (shark.position.y < -19 || shark.position.y > 25) data.direction.y *= -1;
+            // Pick a new patrol depth occasionally
+            if (Math.random() < 0.002) data.patrolY = Math.random() * 18 - 10;
         }
-        
-        // Tail wag animation
-        if (shark.children[1]) shark.children[1].rotation.y = Math.sin(time * 4 + index) * 0.3;
-        
-        // Vertical oscillation (sharks swim up and down slightly)
-        shark.position.y = Math.sin(time + shark.position.x * 0.1 + index) * 3.5;
-        
-        // Rotate shark to face movement direction
-        shark.rotation.y = Math.atan2(data.direction.x, data.direction.z);
-        
-        // COLLISION WITH DIVER
-        if (diver && gameState.hitCooldown <= 0) {
-            const distance = shark.position.distanceTo(diver.position);
-            if (distance < 3.2) {
-                // Check if shield is active
-                if (activePowerUps.shield.active) { 
-                    showNotification('🛡️ SHIELD BLOCKED!', '#4ecdc4', '22px', 800); 
-                } 
+        // Tail wag
+        if (shark.children[1]) shark.children[1].rotation.y=Math.sin(time*4)*0.3;
+        // Tilt body to match vertical movement so it looks natural diving up/down
+        shark.rotation.x = -data.direction.y * 0.6;
+        shark.rotation.y=Math.atan2(data.direction.x,data.direction.z);
+        if (diver&&gameState.hitCooldown<=0) {
+            if (shark.position.distanceTo(diver.position)<3.2) {
+                if (activePowerUps.shield.active) { showNotification('🛡️ SHIELD BLOCKED!','#4ecdc4','22px',800); }
                 else {
-                    // Apply damage
-                    gameState.oxygen = Math.max(0, gameState.oxygen - 18);
-                    gameState.hitCooldown = 0.6;
-                    updateUI(); 
-                    flashDamage();
-                    
-                    // Play sounds
-                    if (sounds.hit) sounds.hit(); 
-                    if (sounds.sharkBite) sounds.sharkBite();
-                    
-                    // Knockback effect - push diver away from shark
-                    const knockback = shark.position.clone().sub(diver.position).normalize();
+                    gameState.oxygen=Math.max(0,gameState.oxygen-18);
+                    gameState.hitCooldown=0.6; updateUI(); flashDamage();
+                    spawnFloatingText('-18', diver.position.clone().add(new THREE.Vector3(0,1,0)), '#ff4444');
+                    if (sounds.hit) sounds.hit(); if (sounds.sharkBite) sounds.sharkBite();
+                    const knockback=shark.position.clone().sub(diver.position).normalize();
                     diver.position.addScaledVector(knockback, 5);
-                    
-                    // Check for game over
-                    if (gameState.oxygen <= 0) endGame(false);
+                    if (gameState.oxygen<=0) endGame(false);
                 }
             }
         }
     });
-    
-    // JELLYFISH update
     jellyfish.forEach(jelly => {
-        if (!jelly || !jelly.userData) return;
-        const data = jelly.userData;
-        data.direction += data.speed * 0.015 * sd;
-        jelly.position.x += Math.cos(data.direction) * 0.07 * (sd * 30);
-        jelly.position.z += Math.sin(data.direction) * 0.07 * (sd * 30);
-        jelly.position.y += Math.sin(time * 2.5 + data.pulsePhase) * 0.025;
-        
-        // Pulsing animation
-        const sc = 1 + Math.sin(time * 5) * 0.12;
-        jelly.scale.set(sc, 1, sc);
-        
-        // Bioluminescence effect
-        if (jelly.children[1]) {
-            jelly.children[1].material.emissiveIntensity = 0.3 + Math.sin(time * 4 + data.pulsePhase) * 0.3;
-        }
-        
-        // Jellyfish collision
-        if (diver && gameState.hitCooldown <= 0 && !activePowerUps.shield.active) {
-            if (jelly.position.distanceTo(diver.position) < 2.8) {
-                gameState.oxygen = Math.max(0, gameState.oxygen - 10);
-                gameState.hitCooldown = 0.4;
-                updateUI(); 
-                flashDamage();
+        if (!jelly||!jelly.userData) return;
+        const data=jelly.userData;
+        data.direction+=data.speed*0.015*sd;
+        jelly.position.x+=Math.cos(data.direction)*0.07*(sd*30);
+        jelly.position.z+=Math.sin(data.direction)*0.07*(sd*30);
+        jelly.position.y+=Math.sin(time*2.5+data.pulsePhase)*0.025;
+        const sc=1+Math.sin(time*5)*0.12;
+        jelly.scale.set(sc,1,sc);
+        // Bioluminescence pulse
+        if (jelly.children[1]) jelly.children[1].material.emissiveIntensity=0.3+Math.sin(time*4+data.pulsePhase)*0.3;
+        if (diver&&gameState.hitCooldown<=0&&!activePowerUps.shield.active) {
+            if (jelly.position.distanceTo(diver.position)<2.8) {
+                gameState.oxygen=Math.max(0,gameState.oxygen-10);
+                gameState.hitCooldown=0.4; updateUI(); flashDamage();
+                spawnFloatingText('-10', diver.position.clone().add(new THREE.Vector3(0,1,0)), '#ff88cc');
                 if (sounds.hit) sounds.hit();
-                if (gameState.oxygen <= 0) endGame(false);
+                if (gameState.oxygen<=0) endGame(false);
             }
         }
     });
@@ -1758,9 +2134,11 @@ function updateEnemies(time, delta) {
 
 function flashDamage() {
     const flash=document.createElement('div');
-    Object.assign(flash.style, { position:'fixed',top:'0',left:'0',width:'100%',height:'100%',backgroundColor:'rgba(255,0,0,0.5)',pointerEvents:'none',zIndex:'1000' });
+    Object.assign(flash.style, { position:'fixed',top:'0',left:'0',width:'100%',height:'100%',backgroundColor:'rgba(255,0,0,0.5)',pointerEvents:'none',zIndex:'1000',transition:'opacity 0.15s' });
     document.body.appendChild(flash);
-    setTimeout(()=>flash.remove(),150);
+    setTimeout(()=>{ flash.style.opacity='0'; },80);
+    setTimeout(()=>flash.remove(),230);
+    triggerScreenShake(0.6);
 }
 
 function updateBubbles(time) {
@@ -1795,7 +2173,8 @@ function init() {
 
     setupEventListeners(); animate(); initGamepadSupport();
 
-    createMinimap(); createPowerUpHUD();
+    createMinimap(); createPowerUpHUD(); createGamepadDebug(); createPauseMenu();
+    createOxygenTankPickups();
     createSharkWarning(); createStarfishRadar();
     addQuitButton(); addSoundToggleButton();
     addVolumeControl(); addMouseInstruction();
@@ -1809,6 +2188,9 @@ function animate() {
     requestAnimationFrame(animate);
     const delta = Math.min(clock.getDelta(), 0.033);
     const time = clock.getElapsedTime();
+    updateGamepadInput();
+    if (isPaused) { renderer.render(scene, camera); return; } // poll every frame - right stick look works without waiting for connect event
+    updateGamepadDebug();
     updateDiver(delta);
     updateCollectibles(time);
     updateEnemies(time, delta);
@@ -1826,7 +2208,12 @@ function animate() {
     updateMinimap();
     updateSharkWarning();
     updateStarfishRadar();
-    renderer.render(scene, camera);
+    updateOxygenTankPickups(time);
+    updateFloatingTexts();
+    updateScreenShake();
+    if (bossShark) updateBossShark(time, Math.min(clock.getDelta()+0.001, 0.033));
+    if (!isPaused) renderer.render(scene, camera);
+    else renderer.render(scene, camera); // still render when paused
 }
 
 init();

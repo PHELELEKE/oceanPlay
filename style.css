@@ -248,3 +248,84 @@ canvas { display: block; position: fixed; top: 0; left: 0; z-index: 1; }
 }
 
 .hidden { display: none !important; }
+/* ===== UPGRADED STYLES ===== */
+
+/* Power-up HUD pills */
+#power-up-hud { pointer-events: none; }
+
+/* Minimap */
+#minimap-canvas { image-rendering: pixelated; }
+
+/* Shark warning pulse */
+#shark-warning { animation: sharkPulse 0.8s infinite; }
+@keyframes sharkPulse {
+    0%,100% { transform: translateY(-50%) scale(1); }
+    50% { transform: translateY(-50%) scale(1.04); }
+}
+
+/* Starfish radar */
+#starfish-radar { animation: radarPulse 1.2s infinite; }
+@keyframes radarPulse {
+    0%,100% { opacity: 1; }
+    50% { opacity: 0.7; }
+}
+
+/* Oxygen bar color transitions */
+#oxygen-fill { transition: width 0.3s ease, background 0.5s ease; }
+
+/* Score breakdown */
+#gameover-breakdown, #victory-breakdown {
+    text-align: left; padding: 0 10px;
+}
+
+/* Difficulty buttons - show sub-label */
+.diff-btn small {
+    display: block; font-size: 0.65rem;
+    font-family: Poppins, sans-serif; font-weight: 300;
+    margin-top: 3px; opacity: 0.8;
+}
+
+/* High score badge */
+#high-score-display { letter-spacing: 2px; }
+
+/* Leaderboard rows */
+#leaderboard-list div, #leaderboard-list-v div, #leaderboard-list-start div {
+    color: #aaddff; gap: 12px;
+}
+
+/* Victory screen leaderboard */
+#leaderboard-box, #leaderboard-box-v { max-width: 400px; margin-left: auto; margin-right: auto; }
+
+/* Gameover screen - add scroll for smaller screens */
+.gameover-content, .victory-content {
+    max-height: 90vh; overflow-y: auto;
+}
+
+
+/* ===== NEW ADDITIONS ===== */
+
+/* Timer pulse animation */
+@keyframes timerPulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.15); }
+}
+
+/* Combo display */
+#combo-display {
+    letter-spacing: 2px;
+    transition: opacity 0.3s, transform 0.15s;
+}
+
+/* Difficulty badge */
+#difficulty-badge { letter-spacing: 1px; text-transform: uppercase; }
+
+/* Pause menu buttons hover */
+#pause-resume:hover { background: #1a5a8c !important; transform: scale(1.04); }
+#pause-restart:hover { background: #5a4a00 !important; transform: scale(1.04); }
+#pause-quit:hover { background: #5a0010 !important; transform: scale(1.04); }
+
+/* Boss warning pulse */
+@keyframes bossWarning {
+    0%, 100% { box-shadow: inset 0 0 40px rgba(255,0,0,0.3); }
+    50% { box-shadow: inset 0 0 80px rgba(255,0,0,0.6); }
+}
