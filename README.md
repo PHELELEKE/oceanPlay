@@ -11,7 +11,7 @@ Ocean Rescue is a 3D underwater adventure game where you play as a scuba diver c
 - 🐠 Marine life companions (dolphins guide you, turtles are rideable)
 - 🦈 Dynamic shark AI (chases on Hard difficulty)
 - 💯 Combo scoring system
-- 🌊 Underwater visual effects (caustics, depth fog, blue tint)
+- 🌊 Underwater visual effects (caustics, depth fog,  blue tint)
 
 ## Controls
 - **WASD** - Move
